@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Contact as ContactIcon, Loader2, MessageCircle, RefreshCw, Shield, Trash2, UserPlus } from 'lucide-react';
+import { Contact as ContactIcon, FileUp, Loader2, MessageCircle, RefreshCw, Shield, Trash2, UserPlus } from 'lucide-react';
 import { api, type Contact, type ContactSource } from '../api';
 import { Avatar, Button, Card, Checkbox, SearchInput } from '../components/ui';
 import { MessagePanel } from '../components/MessagePanel';
 import { AddJobModal } from '../components/AddJobModal';
+import { ImportTxtModal } from '../components/ImportTxtModal';
 import { useToast } from '../components/Toast';
 
 export function ContactsPage({ active, onJobCreated }: { active: boolean; onJobCreated: (jobId: string) => void }) {
@@ -17,6 +18,7 @@ export function ContactsPage({ active, onJobCreated }: { active: boolean; onJobC
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openContact, setOpenContact] = useState<Contact | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 300);
@@ -84,6 +86,9 @@ export function ContactsPage({ active, onJobCreated }: { active: boolean; onJobC
               Contatos salvos <span className="text-content-muted">({items.length})</span>
             </h2>
             <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setImportOpen(true)}>
+                <FileUp size={16} /> Importar .txt
+              </Button>
               <Button variant="primary" onClick={() => setAddOpen(true)} disabled={!selected.size}>
                 <UserPlus size={16} /> Adicionar ao grupo…
               </Button>
@@ -137,11 +142,18 @@ export function ContactsPage({ active, onJobCreated }: { active: boolean; onJobC
               <Loader2 className="animate-spin" />
             </div>
           ) : items.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 p-10 text-center text-sm text-content-muted">
-              <ContactIcon size={32} />
-              {debounced || sourceGroup
-                ? 'Nenhum contato encontrado com esse filtro.'
-                : 'Nenhum contato salvo ainda. Extraia um grupo e clique em “Salvar contatos”.'}
+            <div className="flex flex-col items-center gap-3 p-10 text-center text-sm text-content-muted">
+              <ContactIcon size={36} />
+              <p>
+                {debounced || sourceGroup
+                  ? 'Nenhum contato encontrado com esse filtro.'
+                  : 'Nenhum contato salvo ainda. Extraia um grupo e salve, ou importe um arquivo .txt com números.'}
+              </p>
+              {!debounced && !sourceGroup && (
+                <Button variant="secondary" onClick={() => setImportOpen(true)} className="mt-1">
+                  <FileUp size={16} /> Importar arquivo .txt
+                </Button>
+              )}
             </div>
           ) : (
             items.map((c) => (
@@ -183,6 +195,12 @@ export function ContactsPage({ active, onJobCreated }: { active: boolean; onJobC
           setSelected(new Set());
           onJobCreated(id);
         }}
+      />
+
+      <ImportTxtModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSuccess={load}
       />
     </main>
   );

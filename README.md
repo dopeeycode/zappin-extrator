@@ -22,6 +22,7 @@ npm run dev
    - Você pode selecionar quais membros quer guardar e clicar em **Salvar contatos** (opção
      "Não incluir admins" já vem ligada por padrão).
 3. **Aba Contatos**: lista seus contatos salvos, com busca e filtro por grupo de origem.
+   - **Importar .txt**: anexe um arquivo `.txt` (1 número por linha, igual ao gerado na exportação) ou cole a lista diretamente, definindo um nome de identificação para a lista.
    - Selecione vários contatos e clique em **Adicionar ao grupo…** para abrir o modal de job.
    - Clique em um contato para abrir o painel lateral e mandar uma **mensagem individual**
      (com digitação humanizada e histórico salvo).
