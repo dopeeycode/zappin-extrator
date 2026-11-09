@@ -1,0 +1,6 @@
+node_modules
+dist
+.env
+apps/api/.baileys_auth
+apps/api/exports
+*.tsbuildinfo
