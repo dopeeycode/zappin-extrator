@@ -3,4 +3,6 @@ dist
 .env
 apps/api/.baileys_auth
 apps/api/exports
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
 *.tsbuildinfo

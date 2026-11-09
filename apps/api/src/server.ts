@@ -3,6 +3,10 @@ import cors from '@fastify/cors';
 import fs from 'fs';
 import path from 'path';
 import { whatsapp, EXPORTS_DIR } from './whatsapp.js';
+import { prisma } from './database/prisma.js';
+import { contactsRoutes } from './routes/contacts.js';
+import { messagesRoutes } from './routes/messages.js';
+import { addJobsRoutes, addRunner } from './routes/add-jobs.js';
 
 const PORT = Number(process.env.PORT ?? 3334);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -64,9 +68,18 @@ app.get<{ Params: { file: string } }>('/api/exports/:file', async (req, reply) =
   return reply.send(fs.createReadStream(full));
 });
 
+// ---- Contatos salvos, mensagens individuais e jobs de adição ----
+await app.register(contactsRoutes);
+await app.register(messagesRoutes);
+await app.register(addJobsRoutes);
+
 const address = await app.listen({ port: PORT, host: HOST });
 console.log(`\n🚀 Zapin Extrator API em ${address}`);
 console.log(`📁 Arquivos exportados em: ${EXPORTS_DIR}\n`);
+
+// Jobs de adição que estavam rodando voltam como PAUSED (o usuário clica em retomar).
+await addRunner.recoverOnBoot();
+addRunner.start();
 
 // Reconecta automaticamente se já houver sessão salva
 if (whatsapp.hasSavedSession()) {
@@ -75,8 +88,10 @@ if (whatsapp.hasSavedSession()) {
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {
+    addRunner.stop();
     await whatsapp.disconnect();
     await app.close();
+    await prisma.$disconnect();
     process.exit(0);
   });
 }

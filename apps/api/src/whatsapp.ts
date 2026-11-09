@@ -215,26 +215,98 @@ class WhatsAppService {
     return this.socket;
   }
 
+  /** Socket conectado, ou null se o WhatsApp não estiver conectado. */
+  getSocket(): WASocket | null {
+    return this.socket && this.status === 'CONNECTED' ? this.socket : null;
+  }
+
+  /** Acha a conta conectada na lista de participantes (por telefone ou LID). */
+  private findMe(sock: WASocket, participants: GroupMetadata['participants']) {
+    const myPn = this.connectedPhone;
+    const myLid = jidUser(sock.user?.lid);
+    return participants.find(
+      (p) =>
+        (myPn && (pnJidToDigits(p.id) === myPn || pnJidToDigits(p.phoneNumber) === myPn)) ||
+        (myLid && (jidUser(p.id) === myLid || jidUser(p.lid) === myLid)),
+    );
+  }
+
   async listGroups(): Promise<GroupDTO[]> {
     const sock = this.requireSocket();
     const groups = await withRetry(() => sock.groupFetchAllParticipating());
-    const myPn = this.connectedPhone;
-    const myLid = jidUser(sock.user?.lid);
     return Object.values(groups)
-      .map((g) => {
-        const me = g.participants.find(
-          (p) =>
-            (myPn && (pnJidToDigits(p.id) === myPn || pnJidToDigits(p.phoneNumber) === myPn)) ||
-            (myLid && (jidUser(p.id) === myLid || jidUser(p.lid) === myLid)),
-        );
-        return {
-          id: g.id,
-          name: g.subject || 'Grupo sem nome',
-          size: g.participants.length || g.size || 0,
-          isAdmin: Boolean(me?.admin),
-        };
-      })
+      .map((g) => ({
+        id: g.id,
+        name: g.subject || 'Grupo sem nome',
+        size: g.participants.length || g.size || 0,
+        isAdmin: Boolean(this.findMe(sock, g.participants)?.admin),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }
+
+  async listAdminGroups(): Promise<GroupDTO[]> {
+    return (await this.listGroups()).filter((g) => g.isAdmin);
+  }
+
+  /**
+   * Situação atual do grupo: nome, se sou admin e os telefones que já estão nele.
+   * Membros com número oculto (LID sem phone_number) não entram em `phones` —
+   * para esses, o WhatsApp responde 409 (já está no grupo) na hora de adicionar.
+   */
+  async groupSnapshot(groupJid: string): Promise<{ name: string; size: number; isAdmin: boolean; phones: Set<string> }> {
+    const sock = this.requireSocket();
+    const meta = await withRetry(() => sock.groupMetadata(groupJid));
+    const phones = new Set<string>();
+    for (const p of meta.participants) {
+      const phone = pnJidToDigits(p.id) ?? pnJidToDigits(p.phoneNumber);
+      if (phone) phones.add(phone);
+    }
+    return {
+      name: meta.subject || 'Grupo sem nome',
+      size: meta.participants.length,
+      isAdmin: Boolean(this.findMe(sock, meta.participants)?.admin),
+      phones,
+    };
+  }
+
+  /** Link de convite do grupo (precisa ser admin). */
+  async groupInviteLink(groupJid: string): Promise<string> {
+    const sock = this.requireSocket();
+    const code = await sock.groupInviteCode(groupJid);
+    if (!code) throw Object.assign(new Error('Não foi possível obter o link de convite do grupo.'), { statusCode: 502 });
+    return `https://chat.whatsapp.com/${code}`;
+  }
+
+  /**
+   * Envia uma mensagem de texto para UM número, de forma "humanizada" (mesmo padrão do
+   * zapin): confirma que o número tem WhatsApp, mostra "digitando…" por um tempo
+   * proporcional ao tamanho do texto e só então envia.
+   */
+  async sendText(phone: string, text: string): Promise<void> {
+    const sock = this.requireSocket();
+    const jid = `${phone}@s.whatsapp.net`;
+    if (pnJidToDigits(jid) !== phone) {
+      throw Object.assign(new Error('Número inválido.'), { statusCode: 400 });
+    }
+
+    const [check] = (await withRetry(() => sock.onWhatsApp(jid), 2)) ?? [];
+    if (!check?.exists) {
+      throw Object.assign(new Error('Este número não tem WhatsApp.'), { statusCode: 404 });
+    }
+    const target = check.jid || jid;
+
+    const baseDelay = 1200 + Math.floor(Math.random() * 1800);
+    const typingDelay = Math.min(baseDelay + text.length * 15, 6500);
+    try {
+      await sock.sendPresenceUpdate('composing', target);
+      await sleep(typingDelay);
+      await sock.sendPresenceUpdate('paused', target);
+    } catch {
+      /* presença é só cosmética */
+    }
+    await sleep(300 + Math.floor(Math.random() * 400));
+    await sock.sendMessage(target, { text });
+    console.log(`📤 Mensagem enviada para ${phone} (digitando ${typingDelay}ms)`);
   }
 
   /**

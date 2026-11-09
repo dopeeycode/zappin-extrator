@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Banco de contatos salvos a partir das extrações.
+model Contact {
+  id              String       @id @default(cuid())
+  /// Só dígitos, E.164 (ex.: 5511917551613)
+  phone           String       @unique
+  name            String?
+  sourceGroupId   String?
+  sourceGroupName String?
+  /// Era admin/criador no grupo de origem
+  wasAdmin        Boolean      @default(false)
+  tags            String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  addItems        AddJobItem[]
+  messages        MessageLog[]
+
+  @@index([sourceGroupId])
+}
+
+/// Job de adição a um grupo, em lotes espaçados.
+model AddJob {
+  id          String       @id @default(cuid())
+  groupJid    String
+  groupName   String
+  /// RUNNING | PAUSED | DONE | CANCELED
+  status      String       @default("RUNNING")
+  /// Motivo da última pausa automática (limite diário, desconexão, etc.)
+  pauseReason String?
+  batchSize   Int
+  minDelaySec Int
+  maxDelaySec Int
+  dailyLimit  Int
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  items       AddJobItem[]
+
+  @@index([status])
+}
+
+model AddJobItem {
+  id           String    @id @default(cuid())
+  jobId        String
+  contactId    String
+  /// PENDING | ADDED | ALREADY_IN | PRIVACY_BLOCKED | RECENTLY_LEFT | FAILED
+  status       String    @default("PENDING")
+  /// Código devolvido pelo WhatsApp (200, 403, 409…)
+  code         String?
+  processedAt  DateTime?
+  inviteSentAt DateTime?
+  job          AddJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contact      Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, contactId])
+  @@index([status, processedAt])
+}
+
+/// Histórico de mensagens individuais enviadas.
+model MessageLog {
+  id        String   @id @default(cuid())
+  contactId String
+  text      String
+  /// SENT | FAILED
+  status    String
+  error     String?
+  sentAt    DateTime @default(now())
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, sentAt])
+}
+
